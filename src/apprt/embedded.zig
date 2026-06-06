@@ -28,6 +28,14 @@ const log = std.log.scoped(.embedded_window);
 pub const resourcesDir = internal_os.resourcesDir;
 
 pub const App = struct {
+    // cmux fork: on Linux the embedded apprt drives GtkGLArea, which only
+    // permits OpenGL calls from the GTK main thread (the GdkGLContext is
+    // bound there by GtkGLArea::realize and never re-bound on the renderer
+    // thread). Force the renderer to post draws back to the app thread the
+    // same way the apprt.gtk runtime does. macOS/iOS embedders use Metal
+    // and tolerate the threaded path, so we leave them alone.
+    pub const must_draw_from_app_thread = builtin.target.os.tag == .linux;
+
     /// Because we only expect the embedding API to be used in embedded
     /// environments, the options are extern so that we can expose it
     /// directly to a C callconv and not pay for any translation costs.
