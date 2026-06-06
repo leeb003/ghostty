@@ -160,19 +160,25 @@ fn prepareContext(getProcAddress: anytype) !void {
 
 /// This is called early right after surface creation.
 pub fn surfaceInit(surface: *apprt.Surface) !void {
-    _ = surface;
-
     switch (apprt.runtime) {
         else => @compileError("unsupported app runtime for OpenGL"),
 
         // GTK uses global OpenGL context so we load from null.
         apprt.gtk,
-        => try prepareContext(null),
+        => {
+            _ = &surface;
+            try prepareContext(null);
+        },
 
         apprt.embedded => {
-            // TODO(mitchellh): this does nothing today to allow libghostty
-            // to compile for OpenGL targets but libghostty is strictly
-            // broken for rendering on this platforms.
+            // cmux fork: GTK4 embedded variant uses GtkGLArea, which
+            // exposes a global GL context via gl_area.make_current() on
+            // the Rust side. Treat it the same as the GTK apprt path.
+            // macos/ios embedded variants use Metal, not OpenGL.
+            switch (surface.platform) {
+                .gtk4 => try prepareContext(null),
+                else => {},
+            }
         },
     }
 

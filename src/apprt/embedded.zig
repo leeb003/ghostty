@@ -355,6 +355,7 @@ pub const App = struct {
 pub const Platform = union(PlatformTag) {
     macos: MacOS,
     ios: IOS,
+    gtk4: GTK4,
 
     // If our build target for libghostty is not darwin then we do
     // not include macos support at all.
@@ -368,6 +369,14 @@ pub const Platform = union(PlatformTag) {
         uiview: objc.Object,
     } else void;
 
+    // cmux fork: GTK4 embedded platform. The gl_area pointer is a
+    // GtkGLArea widget owned by the caller; the GdkGLContext is managed
+    // by GTK4 itself when the area is realized.  wakeup_cb and userdata
+    // are registered globally via ghostty_runtime_config_s, not here.
+    pub const GTK4 = if (builtin.target.os.tag == .linux) struct {
+        gl_area: *anyopaque, // GtkWidget* (GtkGLArea)
+    } else void;
+
     // The C ABI compatible version of this union. The tag is expected
     // to be stored elsewhere.
     pub const C = extern union {
@@ -377,6 +386,10 @@ pub const Platform = union(PlatformTag) {
 
         ios: extern struct {
             uiview: ?*anyopaque,
+        },
+
+        gtk4: extern struct {
+            gl_area: ?*anyopaque,
         },
     };
 
@@ -397,6 +410,13 @@ pub const Platform = union(PlatformTag) {
                     break :ios error.UIViewMustBeSet);
                 break :ios .{ .ios = .{ .uiview = uiview } };
             } else error.UnsupportedPlatform,
+
+            .gtk4 => if (GTK4 != void) gtk4: {
+                const config = c_platform.gtk4;
+                const gl_area = config.gl_area orelse
+                    break :gtk4 error.GLAreaMustBeSet;
+                break :gtk4 .{ .gtk4 = .{ .gl_area = gl_area } };
+            } else error.UnsupportedPlatform,
         };
     }
 };
@@ -407,6 +427,10 @@ pub const PlatformTag = enum(c_int) {
 
     macos = 1,
     ios = 2,
+    // cmux fork: Linux GTK4 embedded variant. Surface renders into a
+    // caller-owned GtkGLArea. The GdkGLContext is managed by GTK4
+    // itself when the area is realized.
+    gtk4 = 3,
 };
 
 pub const EnvVar = extern struct {
