@@ -4222,13 +4222,17 @@ pub fn mouseButtonCallback(
 
             // Triple click, select the line under our mouse
             3 => {
-                const sel_ = if (mods.ctrlOrSuper())
-                    self.io.terminal.screens.active.selectOutput(pin.*)
-                else
-                    self.io.terminal.screens.active.selectLine(.{ .pin = pin.* });
-                if (sel_) |sel| {
-                    try self.io.terminal.screens.active.select(sel);
-                    try self.queueRender();
+                // Guard against a stale pin (page erased by reflow/pane-close)
+                // that selectLine/selectOutput would dereference and SIGSEGV.
+                if (self.io.terminal.screens.active.pages.containsNode(pin.node)) {
+                    const sel_ = if (mods.ctrlOrSuper())
+                        self.io.terminal.screens.active.selectOutput(pin.*)
+                    else
+                        self.io.terminal.screens.active.selectLine(.{ .pin = pin.* });
+                    if (sel_) |sel| {
+                        try self.io.terminal.screens.active.select(sel);
+                        try self.queueRender();
+                    }
                 }
             },
 
@@ -4936,6 +4940,11 @@ fn dragLeftClickDouble(
     const screen: *terminal.Screen = self.io.terminal.screens.active;
     const click_pin = self.mouse.left_click_pin.?.*;
 
+    // Guard against stale pins (see dragLeftClickTriple): a pin whose page was
+    // erased by a reflow/pane-close would be dereferenced here and SIGSEGV.
+    if (!screen.pages.containsNode(click_pin.node) or
+        !screen.pages.containsNode(drag_pin.node)) return;
+
     // Get the word closest to our starting click.
     const word_start = screen.selectWordBetween(
         click_pin,
@@ -4981,6 +4990,13 @@ fn dragLeftClickTriple(
     const screen: *terminal.Screen = self.io.terminal.screens.active;
     const click_pin = self.mouse.left_click_pin.?.*;
 
+    // Guard against stale pins: a stored mouse pin can outlive its page when a
+    // pane is closed/reflowed (or belong to a different screen after an
+    // alt-screen switch). selectLine dereferences the pin without validating
+    // it, so a dangling pin SIGSEGVs. Bail to a no-op selection instead.
+    if (!screen.pages.containsNode(click_pin.node) or
+        !screen.pages.containsNode(drag_pin.node)) return;
+
     // Get the line selection under our current drag point. If there isn't a
     // line, do nothing.
     const line = screen.selectLine(.{ .pin = drag_pin }) orelse return;
@@ -5005,9 +5021,14 @@ fn dragLeftClickSingle(
     drag_pin: terminal.Pin,
     drag_x: f64,
 ) !void {
+    const screen: *terminal.Screen = self.io.terminal.screens.active;
+    const click_pin = self.mouse.left_click_pin.?.*;
+    // Guard against stale pins (see dragLeftClickTriple).
+    if (!screen.pages.containsNode(click_pin.node) or
+        !screen.pages.containsNode(drag_pin.node)) return;
     // This logic is in a separate function so that it can be unit tested.
-    try self.io.terminal.screens.active.select(mouseSelection(
-        self.mouse.left_click_pin.?.*,
+    try screen.select(mouseSelection(
+        click_pin,
         drag_pin,
         @intFromFloat(@max(0.0, self.mouse.left_click_xpos)),
         @intFromFloat(@max(0.0, drag_x)),

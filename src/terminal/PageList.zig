@@ -3973,6 +3973,21 @@ pub fn trackedPins(self: *const PageList) []const *Pin {
     return self.tracked_pins.keys();
 }
 
+/// Returns true if `target` is currently a node (page) in this list.
+///
+/// Pointer comparison ONLY — never dereferences `target`, so it is safe to
+/// call with a possibly-dangling node pointer (e.g. a stored mouse pin left
+/// over after its page was erased by a reflow / pane close). Unlike
+/// pinIsValid this works in release builds. O(number of pages); only intended
+/// for occasional callers such as mouse-selection handlers, not per-frame.
+pub fn containsNode(self: *const PageList, target: *const List.Node) bool {
+    var it = self.pages.first;
+    while (it) |node| : (it = node.next) {
+        if (node == target) return true;
+    }
+    return false;
+}
+
 /// Checks if a pin is valid for this pagelist. This is a very slow and
 /// expensive operation since we traverse the entire linked list in the
 /// worst case. Only for runtime safety/debug.
